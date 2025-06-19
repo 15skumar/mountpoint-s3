@@ -99,13 +99,15 @@ pub struct CliArgs {
         value_name = "NETWORK_INTERFACE"
     )]
     pub bind: Option<Vec<String>>,
+
+    #[clap(long, help = "OTLP metrics endpoint URL", value_name = "ENDPOINT")]
+    pub metrics_otlp_endpoint: Option<String>,
 }
 
 fn main() {
     init_tracing_subscriber();
-    let _metrics_handle = mountpoint_s3_fs::metrics::install();
-
     let args = CliArgs::parse();
+    let _metrics_handle = mountpoint_s3_fs::metrics::install(args.metrics_otlp_endpoint.as_deref());
 
     let bucket = args.bucket.as_str();
     let key = args.s3_key.as_str();

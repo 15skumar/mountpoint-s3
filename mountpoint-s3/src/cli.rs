@@ -280,6 +280,14 @@ Learn more in Mountpoint's configuration documentation (CONFIGURATION.md).\
     #[clap(long, help = "Enable logging of summarized performance metrics", help_heading = LOGGING_OPTIONS_HEADER)]
     pub log_metrics: bool,
 
+    #[clap(
+        long,
+        help = "Enable OTLP metrics export to the specified endpoint",
+        help_heading = LOGGING_OPTIONS_HEADER,
+        value_name = "ENDPOINT"
+    )]
+    pub log_metrics_otlp: Option<String>,
+
     #[clap(short, long, help = "Enable debug logging for Mountpoint", help_heading = LOGGING_OPTIONS_HEADER)]
     pub debug: bool,
 

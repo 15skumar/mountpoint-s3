@@ -79,6 +79,9 @@ struct ConfigOptions {
     file_mode: Option<u16>,
     uid: Option<u32>,
     gid: Option<u32>,
+
+    // Metrics options
+    metrics_otlp_endpoint: Option<String>,
 }
 
 impl ConfigOptions {
@@ -208,7 +211,7 @@ fn process_manifests(config: &ConfigOptions, database_directory: &Path) -> Resul
 
 fn setup_logging(config: &ConfigOptions) -> Result<(LoggingHandle, MetricsSinkHandle)> {
     let logging = init_logging(config.build_logging_config())?;
-    let metrics = metrics::install();
+    let metrics = metrics::install(config.metrics_otlp_endpoint.as_deref());
     Ok((logging, metrics))
 }
 

@@ -3,6 +3,9 @@
 //! This module hooks up the [metrics](https://docs.rs/metrics) facade to a metrics sink that
 //! currently just emits them to a tracing log entry.
 
+use crate::metrics_otel::OtlpMetricsExporter;
+use opentelemetry::KeyValue;
+
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -14,6 +17,7 @@ use crate::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use crate::sync::Arc;
 
 mod data;
+pub use data::MetricValue;
 use data::*;
 
 mod tracing_span;
@@ -30,8 +34,8 @@ pub const TARGET_NAME: &str = "mountpoint_s3_fs::metrics";
 /// done with their work; metrics generated after shutting down the sink will be lost.
 ///
 /// Panics if a sink has already been installed.
-pub fn install() -> MetricsSinkHandle {
-    let sink = Arc::new(MetricsSink::new());
+pub fn install(otlp_endpoint: Option<&str>) -> MetricsSinkHandle {
+    let sink = Arc::new(MetricsSink::new(otlp_endpoint));
     let mut sys = System::new();
 
     let (tx, rx) = channel();
@@ -90,12 +94,27 @@ fn poll_process_metrics(sys: &mut System) {
 #[derive(Debug)]
 struct MetricsSink {
     metrics: DashMap<Key, Metric>,
+    otlp_exporter: Option<OtlpMetricsExporter>, // optional OTLP exporter
 }
 
 impl MetricsSink {
-    fn new() -> Self {
+    fn new(otlp_endpoint: Option<&str>) -> Self {
+        // Initialise the OTLP exporter if an endpoint is provided
+        // check syntax and if error case works
+        let otlp_exporter = otlp_endpoint.and_then(|endpoint| match OtlpMetricsExporter::new(endpoint) {
+            Ok(exporter) => {
+                tracing::info!("OpenTelemetry metrics export enabled to {}", endpoint);
+                Some(exporter)
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialise OTLP exporter: {}", e);
+                None
+            }
+        });
+
         Self {
             metrics: DashMap::with_capacity(64),
+            otlp_exporter,
         }
     }
 
@@ -115,15 +134,30 @@ impl MetricsSink {
     }
 
     /// Publish all this sink's metrics to `tracing` log messages
+    /// Send metrics to OTLP if enabled
     fn publish(&self) {
         // Collect the output lines so we can sort them to make reading easier
         let mut metrics = vec![];
 
         for mut entry in self.metrics.iter_mut() {
             let (key, metric) = entry.pair_mut();
-            let Some(metric) = metric.fmt_and_reset() else {
+
+            // Get both the value and string representation of the metric (this also resets the metric)
+            let Some((value, metric_str)) = metric.value_and_fmt_and_reset() else {
                 continue;
             };
+
+            // If OTLP export is enabled, send metrics to OpenTelemetry
+            if let Some(exporter) = &self.otlp_exporter {
+                // Convert labels to OpenTelemetry KeyValue pairs
+                let attributes: Vec<KeyValue> = key
+                    .labels()
+                    .map(|label| KeyValue::new(label.key().to_string(), label.value().to_string()))
+                    .collect();
+
+                // Record the metric using its value
+                exporter.record_metric(key, &value, &attributes);
+            }
             let labels = if key.labels().len() == 0 {
                 String::new()
             } else {
@@ -135,7 +169,7 @@ impl MetricsSink {
                         .join(",")
                 )
             };
-            metrics.push(format!("{}{}: {}", key.name(), labels, metric));
+            metrics.push(format!("{}{}: {}", key.name(), labels, metric_str));
         }
 
         metrics.sort();
@@ -219,7 +253,7 @@ mod tests {
 
     #[test]
     fn basic_metrics() {
-        let sink = Arc::new(MetricsSink::new());
+        let sink = Arc::new(MetricsSink::new(None));
         let recorder = MetricsRecorder { sink: sink.clone() };
         with_local_recorder(&recorder, || {
             // Run twice to check reset works
@@ -308,6 +342,87 @@ mod tests {
                 assert!(inner.load_if_changed().is_some());
                 assert!(inner.load_if_changed().is_none());
             }
+        });
+    }
+
+    #[test]
+    #[ignore] // Mark as ignored so it doesn't run in normal test runs
+    fn otlp_metrics() {
+        use tracing::info;
+        use tracing_subscriber::fmt::format::FmtSpan;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        // Initialize tracing for better test output
+        tracing_subscriber::fmt()
+            .with_span_events(FmtSpan::CLOSE)
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_level(true)
+            .with_file(true)
+            .with_line_number(true)
+            .with_test_writer()
+            .set_default();
+
+        info!("Starting OTLP metrics test...");
+
+        // Initialize metrics with an OTLP endpoint
+        let sink = Arc::new(MetricsSink::new(Some("http://localhost:4318/v1/metrics")));
+        let recorder = MetricsRecorder { sink: sink.clone() };
+
+        with_local_recorder(&recorder, || {
+            // Test counter with multiple labels
+            let counter = metrics::counter!(
+                "mountpoint_test_counter",
+                "operation" => "write",
+                "status" => "success",
+                "test" => "true"
+            );
+            counter.increment(100);
+            counter.increment(50);
+            info!("Recorded counter with total value 150");
+
+            // Test gauge with updates
+            let gauge = metrics::gauge!(
+                "mountpoint_test_gauge",
+                "component" => "cache",
+                "test" => "true"
+            );
+            gauge.set(1000.0);
+            info!("Set gauge to 1000.0");
+            gauge.set(500.0);
+            info!("Updated gauge to 500.0");
+
+            // Test histogram with multiple records
+            let histogram = metrics::histogram!(
+                "mountpoint_test_histogram",
+                "operation" => "read",
+                "test" => "true"
+            );
+            histogram.record(10.0);
+            histogram.record(20.0);
+            histogram.record(30.0);
+            info!("Recorded histogram values: 10.0, 20.0, 30.0");
+
+            // Publish metrics immediately to verify initial values
+            info!("Publishing initial metrics...");
+            sink.publish();
+
+            // Sleep to allow metrics to be exported
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Update metrics to verify changes are tracked
+            counter.increment(200);
+            gauge.set(750.0);
+            histogram.record(40.0);
+            info!("Updated all metrics with new values");
+
+            // Publish again to verify updates
+            info!("Publishing updated metrics...");
+            sink.publish();
+
+            // Wait for final export
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            info!("Test complete. Metrics should show in collector logs.");
         });
     }
 }

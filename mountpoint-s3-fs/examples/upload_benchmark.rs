@@ -86,13 +86,16 @@ struct UploadBenchmarkArgs {
         default_value = "crc32c"
     )]
     pub checksum_algorithm: String,
+
+    #[clap(long, help = "OTLP metrics endpoint URL", value_name = "ENDPOINT")]
+    pub metrics_otlp_endpoint: Option<String>,
 }
 
 fn main() {
     init_tracing_subscriber();
-    let _metrics_handle = mountpoint_s3_fs::metrics::install();
-
     let args = UploadBenchmarkArgs::parse();
+    let _metrics_handle = mountpoint_s3_fs::metrics::install(args.metrics_otlp_endpoint.as_deref());
+
     println!("starting upload benchmark with {:?}", &args);
 
     let mut endpoint_config = EndpointConfig::new(&args.region);
