@@ -76,6 +76,9 @@ impl OtlpMetricsExporter {
             .with_endpoint(&endpoint_url)
             .build()?;
 
+        // Create an empty resource to avoid default dimensions
+        let resource = opentelemetry_sdk::Resource::empty();
+        
         // Create a meter provider with the OTLP Metric Exporter that will collect and export metrics at regular intervals
         let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
             // The default interval is 60 seconds so we use a PeriodicReader to allow us to specify a custom interval duration
@@ -84,6 +87,7 @@ impl OtlpMetricsExporter {
                     .with_interval(Duration::from_secs(config.interval_secs))
                     .build(),
             )
+            .with_resource(resource)
             .build();
         // Set the configured SdkMeterProvider as the global meter provider making it the default provider that will be used throughout for all OpenTelemetry metrics
         global::set_meter_provider(meter_provider);
@@ -217,9 +221,13 @@ mod tests {
             .build();
 
         info!("Created reader");
+        
+        // Create an empty resource to avoid default dimensions
+        let resource = opentelemetry_sdk::Resource::empty();
 
         let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
             .with_reader(reader)
+            .with_resource(resource)
             .build();
 
         info!("Created provider");
