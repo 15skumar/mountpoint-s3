@@ -76,8 +76,8 @@ impl OtlpMetricsExporter {
             .with_endpoint(&endpoint_url)
             .build()?;
 
-        // Create an empty resource to avoid default dimensions
-        let resource = opentelemetry_sdk::Resource::empty();
+        // Create a resource with no attributes to avoid default dimensions
+        let resource = opentelemetry_sdk::resource::Resource::builder_empty().build();
         
         // Create a meter provider with the OTLP Metric Exporter that will collect and export metrics at regular intervals
         let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
@@ -222,8 +222,8 @@ mod tests {
 
         info!("Created reader");
         
-        // Create an empty resource to avoid default dimensions
-        let resource = opentelemetry_sdk::Resource::empty();
+        // Create a resource with no attributes to avoid default dimensions
+        let resource = opentelemetry_sdk::resource::Resource::builder_empty().build();
 
         let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
             .with_reader(reader)
