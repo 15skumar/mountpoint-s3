@@ -42,6 +42,19 @@ pub struct OtlpMetricsExporter {
 }
 
 impl OtlpMetricsExporter {
+    /// Filter out OpenTelemetry-specific dimensions from attributes
+    fn filter_attributes(&self, attributes: &[KeyValue]) -> Vec<KeyValue> {
+        attributes
+            .iter()
+            .filter(|kv| {
+                let key = kv.key.as_str();
+                !key.starts_with("service.") && 
+                !key.starts_with("telemetry.sdk.")
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Create a new OtlpMetricsExporter with the specified configuration
     /// Returns a Result containing the new exporter or an error if initialisation failed
     pub fn new(config: &OtlpConfig) -> Result<Self, Box<dyn std::error::Error>> {
@@ -90,31 +103,37 @@ impl OtlpMetricsExporter {
     /// Record a counter metric in OTel format
     pub fn record_counter(&self, key: &Key, value: u64, attributes: &[KeyValue]) {
         let name = format!("mountpoint.{}", key.name());
+        let filtered_attributes = self.filter_attributes(attributes);
+        
         let mut counters = self.counters.lock().unwrap();
         let counter = counters
             .entry(name.clone())
             .or_insert_with(|| self.meter.u64_counter(name).build());
-        counter.add(value, attributes);
+        counter.add(value, &filtered_attributes);
     }
 
     /// Record a gauge metric in OTel format
     pub fn record_gauge(&self, key: &Key, value: f64, attributes: &[KeyValue]) {
         let name = format!("mountpoint.{}", key.name());
+        let filtered_attributes = self.filter_attributes(attributes);
+        
         let mut gauges = self.gauges.lock().unwrap();
         let gauge = gauges
             .entry(name.clone())
             .or_insert_with(|| self.meter.f64_gauge(name).build());
-        gauge.record(value, attributes);
+        gauge.record(value, &filtered_attributes);
     }
 
     /// Record a histogram metric in OTel format
     pub fn record_histogram(&self, key: &Key, value: f64, attributes: &[KeyValue]) {
         let name = format!("mountpoint.{}", key.name());
+        let filtered_attributes = self.filter_attributes(attributes);
+        
         let mut histograms = self.histograms.lock().unwrap();
         let histogram = histograms
             .entry(name.clone())
             .or_insert_with(|| self.meter.f64_histogram(name).build());
-        histogram.record(value, attributes);
+        histogram.record(value, &filtered_attributes);
     }
 
     /// Record a metric using its MetricValue
