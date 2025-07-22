@@ -117,8 +117,57 @@ impl OtlpMetricsExporter {
         let mut histograms = self.histograms.lock().unwrap();
         let histogram = histograms
             .entry(name.clone())
-            .or_insert_with(|| self.meter.f64_histogram(name).build());
+            .or_insert_with(|| {
+                // Define bucket boundaries appropriate for latency metrics
+                self.meter.f64_histogram(name)
+                    .with_boundaries(vec![
+                        10.0, 50.0, 100.0, 250.0, 500.0, 
+                        1_000.0, 2_500.0, 5_000.0, 10_000.0, 25_000.0, 
+                        50_000.0, 100_000.0, 250_000.0, 500_000.0, 1_000_000.0
+                    ])
+                    .build()
+            });
         histogram.record(value, attributes);
+    }
+
+    /// Record multiple histogram values in OTel format
+    pub fn record_histogram_percentiles(
+        &self,
+        key: &Key,
+        min: u64,
+        p10: u64,
+        p50: u64,
+        mean: f64,
+        p90: u64,
+        p99: u64,
+        p999: u64,
+        max: u64,
+        attributes: &[KeyValue],
+    ) {
+        let name = format!("mountpoint.{}", key.name());
+        let mut histograms = self.histograms.lock().unwrap();
+        let histogram = histograms
+            .entry(name.clone())
+            .or_insert_with(|| {
+                // Define bucket boundaries appropriate for latency metrics
+                self.meter.f64_histogram(name)
+                    .with_boundaries(vec![
+                        10.0, 50.0, 100.0, 250.0, 500.0, 
+                        1_000.0, 2_500.0, 5_000.0, 10_000.0, 25_000.0, 
+                        50_000.0, 100_000.0, 250_000.0, 500_000.0, 1_000_000.0
+                    ])
+                    .build()
+            });
+        
+        // Record all the percentile values to the histogram
+        histogram.record(min as f64, attributes);
+        histogram.record(p10 as f64, attributes);
+        histogram.record(p50 as f64, attributes);
+        histogram.record(mean, attributes);
+        histogram.record(p90 as f64, attributes);
+        histogram.record(p99 as f64, attributes);
+        histogram.record(p999 as f64, attributes);
+        histogram.record(max as f64, attributes);
     }
 
     /// Record a metric using its MetricValue
@@ -126,7 +175,9 @@ impl OtlpMetricsExporter {
         match value {
             MetricValue::Counter(count) => self.record_counter(key, *count, attributes),
             MetricValue::Gauge(val) => self.record_gauge(key, *val, attributes),
-            MetricValue::Histogram(mean) => self.record_histogram(key, *mean, attributes),
+            MetricValue::HistogramWithPercentiles { min, p10, p50, mean, p90, p99, p999, max, .. } => {
+                self.record_histogram_percentiles(key, *min, *p10, *p50, *mean, *p90, *p99, *p999, *max, attributes);
+            }
         }
     }
 }

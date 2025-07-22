@@ -6,7 +6,17 @@ use crate::sync::{Arc, Mutex};
 pub enum MetricValue {
     Counter(u64),
     Gauge(f64),
-    Histogram(f64),
+    HistogramWithPercentiles {
+        count: u64, 
+        min: u64,
+        p10: u64,
+        p50: u64,
+        mean: f64,
+        p90: u64,
+        p99: u64,
+        p999: u64,
+        max: u64,
+    },
 }
 
 /// A single metric
@@ -73,20 +83,32 @@ impl Metric {
             Metric::Histogram(histogram) => {
                 // run_and_reset already returns an Option, so we map it to our return type
                 histogram.run_and_reset(|histogram| {
+                    let count = histogram.len();
+                    let min = histogram.min();
+                    let p10 = histogram.value_at_quantile(0.1);
+                    let p50 = histogram.value_at_quantile(0.5);
                     let mean = histogram.mean();
+                    let p90 = histogram.value_at_quantile(0.9);
+                    let p99 = histogram.value_at_quantile(0.99);
+                    let p999 = histogram.value_at_quantile(0.999);
+                    let max = histogram.max();
+                    
                     let fmt = format!(
                         "n={}: min={} p10={} p50={} avg={:.2} p90={} p99={} p99.9={} max={}",
-                        histogram.len(),
-                        histogram.min(),
-                        histogram.value_at_quantile(0.1),
-                        histogram.value_at_quantile(0.5),
-                        mean,
-                        histogram.value_at_quantile(0.9),
-                        histogram.value_at_quantile(0.99),
-                        histogram.value_at_quantile(0.999),
-                        histogram.max(),
+                        count, min, p10, p50, mean, p90, p99, p999, max
                     );
-                    (MetricValue::Histogram(mean), fmt)
+                    
+                    (MetricValue::HistogramWithPercentiles {
+                        count,
+                        min,
+                        p10,
+                        p50,
+                        mean,
+                        p90,
+                        p99,
+                        p999,
+                        max,
+                    }, fmt)
                 })
             }
         }
