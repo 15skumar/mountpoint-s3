@@ -97,6 +97,7 @@ where
 {
     #[instrument(level="warn", skip_all, fields(req=req.unique()))]
     fn init(&self, req: &Request<'_>, config: &mut KernelConfig) -> Result<(), libc::c_int> {
+        tracing::warn!("MOUNTPOINT INITIALIZED - OTLP ENABLED: {}", crate::metrics::is_otlp_enabled());
         block_on(self.fs.init(config).in_current_span())
     }
 
@@ -152,7 +153,15 @@ where
         }
 
         metrics::counter!("fuse.total_bytes", "type" => "read").increment(bytes_sent as u64);
+        // Always record to histogram for logging
         metrics::histogram!("fuse.io_size", "type" => "read").record(bytes_sent as f64);
+        // Also record to gauge if OpenTelemetry export is enabled
+        let otlp_enabled = crate::metrics::is_otlp_enabled();
+        //tracing::debug!("OTLP enabled: {}, recording fuse.io_size gauge for read: {}", otlp_enabled, bytes_sent);
+        tracing::warn!("OTLP enabled: {}, recording fuse.io_size_gauge for read: {}", otlp_enabled, bytes_sent);
+        if otlp_enabled {
+            metrics::gauge!("fuse.io_size_gauge", "type" => "read").set(bytes_sent as f64);
+        }
     }
 
     #[instrument(level="warn", skip_all, fields(req=req.unique(), ino=parent, name=field::Empty))]
@@ -334,7 +343,16 @@ where
             Ok(bytes_written) => {
                 reply.written(bytes_written);
                 metrics::counter!("fuse.total_bytes", "type" => "write").increment(bytes_written as u64);
+                // Always record to histogram for logging
                 metrics::histogram!("fuse.io_size", "type" => "write").record(bytes_written as f64);
+                // Also record to gauge if OpenTelemetry export is enabled
+                let otlp_enabled = crate::metrics::is_otlp_enabled();
+                tracing::warn!("OTLP enabled: {}, recording fuse.io_size_gauge for write: {}", otlp_enabled, bytes_written);
+                if otlp_enabled {
+                    let gauge = metrics::gauge!("fuse.io_size_gauge", "type" => "write");
+                    gauge.set(bytes_written as f64);
+                    tracing::warn!("Set gauge fuse.io_size_gauge to {}", bytes_written);
+                }
             }
             Err(e) => fuse_error!("write", reply, e, self, req),
         }

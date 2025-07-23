@@ -30,12 +30,23 @@ const AGGREGATION_PERIOD: Duration = Duration::from_secs(5);
 /// The log target to use for emitted metrics
 pub const TARGET_NAME: &str = "mountpoint_s3_fs::metrics";
 
+// Global flag to track if OpenTelemetry export is enabled
+static OTLP_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Check if OpenTelemetry export is enabled
+pub fn is_otlp_enabled() -> bool {
+    OTLP_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Initialize and install the global metrics sink, and return a handle that can be used to shut
 /// the sink down. The sink should only be shut down after any threads that generate metrics are
 /// done with their work; metrics generated after shutting down the sink will be lost.
 ///
 /// Panics if a sink has already been installed.
 pub fn install(otlp_config: Option<OtlpConfig>) -> anyhow::Result<MetricsSinkHandle> {
+    // Set the global flag based on whether OpenTelemetry export is enabled
+    OTLP_ENABLED.store(otlp_config.is_some(), std::sync::atomic::Ordering::Relaxed);
+    
     let sink = Arc::new(MetricsSink::new(otlp_config)?);
     let mut sys = System::new();
 

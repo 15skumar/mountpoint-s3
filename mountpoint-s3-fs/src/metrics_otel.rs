@@ -104,11 +104,13 @@ impl OtlpMetricsExporter {
     /// Record a gauge metric in OTel format
     pub fn record_gauge(&self, key: &Key, value: f64, attributes: &[KeyValue]) {
         let name = format!("mountpoint.{}", key.name());
+        tracing::warn!("OTLP: Recording gauge metric: {} = {} with {} attributes", name, value, attributes.len());
         let mut gauges = self.gauges.lock().unwrap();
         let gauge = gauges
             .entry(name.clone())
-            .or_insert_with(|| self.meter.f64_gauge(name).build());
+            .or_insert_with(|| self.meter.f64_gauge(name.clone()).build());
         gauge.record(value, attributes);
+        tracing::warn!("OTLP: Recorded gauge metric: {}", name);
     }
 
     /// Record a histogram metric in OTel format
@@ -126,7 +128,8 @@ impl OtlpMetricsExporter {
         match value {
             MetricValue::Counter(count) => self.record_counter(key, *count, attributes),
             MetricValue::Gauge(val) => self.record_gauge(key, *val, attributes),
-            MetricValue::Histogram(mean) => self.record_histogram(key, *mean, attributes),
+            //MetricValue::Histogram(mean) => self.record_histogram(key, *mean, attributes),
+            MetricValue::Histogram(_mean) => println!("to do"),
         }
     }
 }
