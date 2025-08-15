@@ -24,6 +24,9 @@ mod data;
 pub use data::MetricValue;
 use data::*;
 
+mod macros;
+pub use macros::*;
+
 mod tracing_span;
 pub use tracing_span::metrics_tracing_span_layer;
 

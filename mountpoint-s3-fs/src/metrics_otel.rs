@@ -124,6 +124,11 @@ impl OtlpMetricsExporter {
 
     /// Record a metric using its MetricValue
     pub fn record_metric(&self, key: &Key, value: &MetricValue, attributes: &[KeyValue]) {
+        // Skip experimental metrics when publishing to OpenTelemetry
+        if self.is_experimental_metric(key, attributes) {
+            return;
+        }
+
         match value {
             MetricValue::Counter(count) => self.record_counter(key, *count, attributes),
             MetricValue::Gauge(val) => self.record_gauge(key, *val, attributes),
@@ -132,6 +137,25 @@ impl OtlpMetricsExporter {
                 // TODO: Will be implemented later
             }
         }
+    }
+
+    /// Check if a metric is marked as experimental
+    fn is_experimental_metric(&self, key: &Key, attributes: &[KeyValue]) -> bool {
+        // Check if any of the labels has key "experimental" and value "true"
+        for attr in attributes {
+            if attr.key.as_str() == "experimental" && attr.value.as_str() == "true" {
+                return true;
+            }
+        }
+
+        // Also check the key's labels
+        for label in key.labels() {
+            if label.key() == "experimental" && label.value() == "true" {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
