@@ -11,7 +11,7 @@ s3_bucket: ???
 s3_result_bucket: !!null
 application_workers: 1
 iteration: 0
-iterations: 1
+iterations: 10
 run_time: 30  # Default run time in seconds
 read_size: 262144 # Defaults to 256KiB, can go up to 1MiB.
 read_part_size: !!null
@@ -31,7 +31,7 @@ network:
 monitoring:
   with_bwm: false
   with_perf_stat: false
-  with_flamegraph: true
+  with_flamegraph: false
   flamegraph_scripts_path: !!null        # Path to directory containing stackcollapse-perf.pl and flamegraph.pl from https://github.com/brendangregg/FlameGraph
 
 # ===== Mountpoint configuration =====
@@ -42,7 +42,7 @@ mountpoint:
   mountpoint_max_background: !!null
   mountpoint_congestion_threshold: !!null
   mountpoint_binary: !!null
-  upload_checksums: !!null
+  upload_checksums: "off"
   max_memory_target: !!null # memory upper-limit in MB
   stub_mode: "off"  # Options: "off", "fs_handler", "s3_client"
   mountpoint_debug: false
@@ -80,9 +80,12 @@ hydra:
     # Global sweeper params - use this for common parameters across all benchmarks
     # For specific parameter use sweep params under the specific benchmark type config
     params:
-      'application_workers': 1, 4, 16, 64, 128
+      'application_workers': 16
       'iteration': "range(${iterations})"
-      'mountpoint.fuse_threads': 1, 16, 64
-      'benchmarks.fio.direct_io': false, true
+      'mountpoint.fuse_threads': 16
+      'benchmarks.fio.direct_io': true, false
+      'download_checksums': false, true
+      'network.interface_names': "[ens32], [ens32, ens65], [ens32, ens65, ens96, ens128]"
+      'network.maximum_throughput_gbps': 400
       # 'benchmarks.prefetch.max_memory_target': !!null, 1073741824, 2147483648  # null, 1GB, 2GB
       #'benchmarks.client_backpressure.read_window_size': 8388608, 2147483648
