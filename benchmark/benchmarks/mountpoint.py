@@ -66,11 +66,13 @@ def mount_mp(cfg: DictConfig, mount_dir: str) -> Dict[str, Any]:
         *mountpoint_args,
         bucket,
         mount_dir,
-        "--log-metrics",
         "--allow-overwrite",
         "--allow-delete",
         f"--log-directory={MP_LOGS_DIRECTORY}",
     ]
+
+    if mp_config['mountpoint_metrics']:
+        subprocess_args.append("--log-metrics")
 
     if mp_config['prefix'] is not None:
         subprocess_args.append(f"--prefix={mp_config['prefix']}")
