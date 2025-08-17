@@ -40,6 +40,10 @@ def mount_mp(cfg: DictConfig, mount_dir: str) -> Dict[str, Any]:
         features = ["mock", "mem_limiter"]
         build_env = {}
 
+        # Add OTLP integration feature if enabled
+        if mp_config['enable_otlp_metrics']:
+            features.append("otlp_integration")
+
         if stub_mode == "s3_client":
             # `mock-mount-s3` requires bucket to be prefixed with `sthree-` to verify we're not actually reaching S3
             logging.debug("using mock-mount-s3 due to `stub_mode`, bucket will be prefixed with \"sthree-\"")
@@ -121,6 +125,13 @@ def mount_mp(cfg: DictConfig, mount_dir: str) -> Dict[str, Any]:
     mp_env["UNSTABLE_MOUNTPOINT_PID_FILE"] = f"{mount_dir}.pid"
     if not common_config['download_checksums']:
         mp_env["EXPERIMENTAL_MOUNTPOINT_NO_DOWNLOAD_INTEGRITY_VALIDATION"] = "ON"
+
+    # Add OTLP metrics configuration if enabled
+    if mp_config['enable_otlp_metrics'] and mp_config['otlp_endpoint']:
+        subprocess_args.append(f"--otlp-endpoint={mp_config['otlp_endpoint']}")
+        if mp_config['otlp_export_interval'] is not None:
+            subprocess_args.append(f"--otlp-export-interval={mp_config['otlp_export_interval']}")
+        log.info(f"OTLP metrics enabled with endpoint: {mp_config['otlp_endpoint']}")
 
     if stub_mode != "off" and mp_config["mountpoint_binary"] is not None:
         raise ValueError("Cannot use `stub_mode` with `mountpoint_binary`, `stub_mode` requires recompilation")

@@ -61,6 +61,9 @@ class BenchmarkConfigParser:
             'stub_mode': getattr(mp_cfg, 'stub_mode', 'off'),
             'upload_checksums': getattr(mp_cfg, 'upload_checksums', None),
             'max_memory_target': getattr(mp_cfg, 'max_memory_target', None),
+            'enable_otlp_metrics': getattr(mp_cfg, 'enable_otlp_metrics', False),
+            'otlp_endpoint': getattr(mp_cfg, 'otlp_endpoint', None),
+            'otlp_export_interval': getattr(mp_cfg, 'otlp_export_interval', None),
         }
 
     def get_fio_config(self) -> Dict[str, Any]:
