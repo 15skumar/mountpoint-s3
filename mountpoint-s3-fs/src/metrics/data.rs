@@ -1,6 +1,9 @@
 use crate::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use crate::sync::{Arc, Mutex};
 
+#[cfg(feature = "otlp_integration")]
+use opentelemetry::KeyValue;
+
 /// Represents the value of a metric
 #[derive(Debug, Clone)]
 pub enum MetricValue {
@@ -51,9 +54,10 @@ impl Metric {
         metrics::Histogram::from_arc(inner.clone())
     }
 
-    /// Generate both the value and string representation of this metric, or None if the metric has had no values
-    /// emitted since the last call to this function.
-    pub fn value_and_fmt_and_reset(&self) -> Option<(MetricValue, String)> {
+    /// Generate the string representation of this metric and record to OpenTelemetry if enabled.
+    /// Returns None if the metric has had no values emitted since the last call to this function.
+    #[cfg(not(feature = "otlp_integration"))]
+    pub fn fmt_and_reset(&self) -> Option<String> {
         match self {
             Metric::Counter(inner) => {
                 let (sum, n) = inner.load_and_reset()?;
@@ -62,13 +66,70 @@ impl Metric {
                 } else {
                     format!("{sum} (n={n})")
                 };
-                Some((MetricValue::Counter(sum), fmt))
+                Some(fmt)
             }
             // Gauges can't reset because they can be incremented/decremented
             Metric::Gauge(inner) => {
                 let value = inner.load_if_changed()?;
                 let fmt = format!("{value}");
-                Some((MetricValue::Gauge(value), fmt))
+                Some(fmt)
+            }
+            Metric::Histogram(histogram) => {
+                // run_and_reset already returns an Option, so we map it to our return type
+                histogram.run_and_reset(|histogram| {
+                    format!(
+                        "n={}: min={} p10={} p50={} avg={:.2} p90={} p99={} p99.9={} max={}",
+                        histogram.len(),
+                        histogram.min(),
+                        histogram.value_at_quantile(0.1),
+                        histogram.value_at_quantile(0.5),
+                        histogram.mean(),
+                        histogram.value_at_quantile(0.9),
+                        histogram.value_at_quantile(0.99),
+                        histogram.value_at_quantile(0.999),
+                        histogram.max(),
+                    )
+                })
+            }
+        }
+    }
+
+    /// Generate the string representation of this metric and record to OpenTelemetry if enabled.
+    /// Returns None if the metric has had no values emitted since the last call to this function.
+    #[cfg(feature = "otlp_integration")]
+    pub fn fmt_and_reset(
+        &self,
+        exporter: Option<&crate::metrics_otel::OtlpMetricsExporter>,
+        key: Option<&metrics::Key>,
+        attributes: Option<&[KeyValue]>,
+    ) -> Option<String> {
+        match self {
+            Metric::Counter(inner) => {
+                let (sum, n) = inner.load_and_reset()?;
+                let fmt = if n == 1 {
+                    format!("{sum}")
+                } else {
+                    format!("{sum} (n={n})")
+                };
+
+                // Record to OpenTelemetry if exporter is provided
+                if let (Some(exporter), Some(key), Some(attributes)) = (exporter, key, attributes) {
+                    exporter.record_counter(key, sum, attributes);
+                }
+
+                Some(fmt)
+            }
+            // Gauges can't reset because they can be incremented/decremented
+            Metric::Gauge(inner) => {
+                let value = inner.load_if_changed()?;
+                let fmt = format!("{value}");
+
+                // Record to OpenTelemetry if exporter is provided
+                if let (Some(exporter), Some(key), Some(attributes)) = (exporter, key, attributes) {
+                    exporter.record_gauge(key, value, attributes);
+                }
+
+                Some(fmt)
             }
             Metric::Histogram(histogram) => {
                 // run_and_reset already returns an Option, so we map it to our return type
@@ -85,13 +146,19 @@ impl Metric {
                         histogram.value_at_quantile(0.999),
                         histogram.max(),
                     );
-                    let mut values = Vec::new();
-                    for value in histogram.iter_recorded() {
-                        for _ in 0..value.count_at_value() {
-                            values.push(value.value_iterated_to() as f64);
+
+                    // Record to OpenTelemetry if exporter is provided
+                    if let (Some(exporter), Some(key), Some(attributes)) = (exporter, key, attributes) {
+                        // Record each value directly to OpenTelemetry
+                        for value in histogram.iter_recorded() {
+                            let val = value.value_iterated_to() as f64;
+                            for _ in 0..value.count_at_value() {
+                                exporter.record_histogram(key, val, attributes);
+                            }
                         }
                     }
-                    (MetricValue::Histogram(values), fmt)
+
+                    fmt
                 })
             }
         }

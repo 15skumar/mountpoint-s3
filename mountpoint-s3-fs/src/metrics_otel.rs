@@ -5,7 +5,6 @@ use opentelemetry_sdk::metrics::{Aggregation, Instrument, Stream};
 use std::convert::TryFrom;
 use std::time::Duration;
 
-use crate::metrics::MetricValue;
 use metrics::Key;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -139,18 +138,7 @@ impl OtlpMetricsExporter {
         histogram.record(value, attributes);
     }
 
-    /// Record a metric using its MetricValue
-    pub fn record_metric(&self, key: &Key, value: &MetricValue, attributes: &[KeyValue]) {
-        match value {
-            MetricValue::Counter(count) => self.record_counter(key, *count, attributes),
-            MetricValue::Gauge(val) => self.record_gauge(key, *val, attributes),
-            MetricValue::Histogram(values) => {
-                for &val in values {
-                    self.record_histogram(key, val, attributes);
-                }
-            }
-        }
-    }
+    // The record_metric method has been removed as we now record metrics directly in data.rs
 }
 
 impl TryFrom<&OtlpConfig> for OtlpMetricsExporter {

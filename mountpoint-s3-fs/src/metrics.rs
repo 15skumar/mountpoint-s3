@@ -182,8 +182,8 @@ impl MetricsSink {
         for mut entry in self.metrics.iter_mut() {
             let (key, metric) = entry.pair_mut();
 
-            // Get both the value and string representation of the metric (this also resets the metric)
-            let Some((_, metric_str)) = metric.value_and_fmt_and_reset() else {
+            // Get the string representation of the metric (this also resets the metric)
+            let Some(metric_str) = metric.fmt_and_reset() else {
                 continue;
             };
 
@@ -220,22 +220,22 @@ impl MetricsSink {
         for mut entry in self.metrics.iter_mut() {
             let (key, metric) = entry.pair_mut();
 
-            // Get both the value and string representation of the metric (this also resets the metric)
-            let Some((value, metric_str)) = metric.value_and_fmt_and_reset() else {
-                continue;
+            // Convert labels to OpenTelemetry KeyValue pairs if OTLP export is enabled
+            let attributes = if self.otlp_exporter.is_some() {
+                Some(
+                    key.labels()
+                        .map(|label| KeyValue::new(label.key().to_string(), label.value().to_string()))
+                        .collect::<Vec<KeyValue>>(),
+                )
+            } else {
+                None
             };
 
-            // If OTLP export is enabled, send metrics to OpenTelemetry
-            if let Some(exporter) = &self.otlp_exporter {
-                // Convert labels to OpenTelemetry KeyValue pairs
-                let attributes: Vec<KeyValue> = key
-                    .labels()
-                    .map(|label| KeyValue::new(label.key().to_string(), label.value().to_string()))
-                    .collect();
-
-                // Record the metric using its value
-                exporter.record_metric(key, &value, &attributes);
-            }
+            // Get the string representation of the metric and record to OpenTelemetry if enabled
+            let Some(metric_str) = metric.fmt_and_reset(self.otlp_exporter.as_ref(), Some(key), attributes.as_deref())
+            else {
+                continue;
+            };
 
             let labels = if key.labels().len() == 0 {
                 String::new()
@@ -353,6 +353,7 @@ mod tests {
                 metrics::histogram!(TEST_HISTOGRAM, "type" => "put").record(4.0);
                 metrics::histogram!(TEST_HISTOGRAM, "type" => "put").record(4.0);
 
+                // Direct testing of the metrics values
                 for mut entry in sink.metrics.iter_mut() {
                     let (key, metric) = entry.pair_mut();
                     assert_eq!(key.labels().count(), 1, "{key} has no labels");
